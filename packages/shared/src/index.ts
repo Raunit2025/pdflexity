@@ -3,7 +3,7 @@
 
 export interface AppConfig {
   version: string;
-  platform: NodeJS.Platform;
+  platform: string;
 }
 
 export interface IpcChannels {
