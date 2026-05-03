@@ -17,11 +17,11 @@ import (
 	"log"
 	"os"
 
-	"github.com/pdflexity/pdf-engine/internal/pdf"
+	"github.com/pdflexity/pdf-engine/internal/handler"
+	"github.com/pdflexity/pdf-engine/internal/model"
 )
 
 func main() {
-	// Log to stderr only — stdout is reserved for JSON responses
 	log.SetOutput(os.Stderr)
 	log.SetPrefix("[pdf-engine] ")
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -37,20 +37,14 @@ func main() {
 			continue
 		}
 
-		var cmd pdf.Command
+		var cmd model.Command
 		if err := json.Unmarshal(line, &cmd); err != nil {
 			writeError(encoder, fmt.Sprintf("invalid command JSON: %v", err))
 			continue
 		}
 
 		log.Printf("received op=%q input=%q", cmd.Op, cmd.InputPath)
-
-		switch cmd.Op {
-		case "unlock":
-			handleUnlock(encoder, cmd)
-		default:
-			writeError(encoder, fmt.Sprintf("unknown operation: %q", cmd.Op))
-		}
+		handler.Route(encoder, cmd)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -58,28 +52,6 @@ func main() {
 	}
 }
 
-// handleUnlock validates inputs then calls the unlock operation.
-func handleUnlock(enc *json.Encoder, cmd pdf.Command) {
-	if cmd.InputPath == "" || cmd.OutputPath == "" {
-		writeError(enc, "inputPath and outputPath are required")
-		return
-	}
-	if cmd.Password == "" {
-		writeError(enc, "password is required")
-		return
-	}
-
-	if err := pdf.Unlock(cmd.InputPath, cmd.OutputPath, cmd.Password); err != nil {
-		log.Printf("unlock error: %v", err)
-		writeError(enc, err.Error())
-		return
-	}
-
-	log.Printf("unlock success: %q", cmd.OutputPath)
-	_ = enc.Encode(pdf.Response{Success: true, OutputPath: cmd.OutputPath})
-}
-
-// writeError writes a failure Response to stdout.
 func writeError(enc *json.Encoder, msg string) {
-	_ = enc.Encode(pdf.Response{Success: false, Error: msg})
+	_ = enc.Encode(model.Response{Success: false, Error: msg})
 }

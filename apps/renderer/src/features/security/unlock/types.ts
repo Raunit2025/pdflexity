@@ -2,12 +2,13 @@
 // Mirror of packages/shared/src/(pdfsecurity)/unlockpdf/types.ts
 // These stay here for renderer-side type safety (no cross-package TS resolution needed)
 
-export type UnlockStep = "idle" | "unlocking" | "success" | "error"
+export type UnlockStep = "idle" | "checking" | "unlocking" | "success" | "error" | "alreadyUnlocked"
 
 export interface UploadedFile {
   file: File
   name: string
   sizeLabel: string
+  isEncrypted: boolean
 }
 
 export interface UnlockState {
@@ -43,6 +44,12 @@ export interface PasswordInputProps {
 }
 
 export interface SuccessCardProps {
+  fileName: string
+  downloadUrl: string
+  onReset: () => void
+}
+
+export interface AlreadyUnlockedCardProps {
   fileName: string
   downloadUrl: string
   onReset: () => void

@@ -32,8 +32,9 @@ class GoBridge {
   private get binaryPath(): string {
     const isDev = process.env.NODE_ENV === "development";
     if (isDev) {
-      // During development, use the binary in apps/electron/bin/
-      return path.join(__dirname, "../bin/pdflexity-engine.exe");
+      // __dirname at runtime = apps/electron/dist/services/
+      // ../../bin  →  apps/electron/bin/  ✓
+      return path.join(__dirname, "../../bin/pdflexity-engine.exe");
     }
     // In production (packaged), the binary is in the app's resources folder
     return path.join(process.resourcesPath, "bin", "pdflexity-engine.exe");

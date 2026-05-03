@@ -141,8 +141,23 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "cv01", "cv02", "cv03", "cv04", "ss01", "tnum";
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   html {
     @apply font-sans;
+    font-size: 14px;        /* Desktop density — 14px base vs 16px web default */
+    letter-spacing: -0.01em;
+  }
+  /* Tighter, crisper headings for desktop */
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.025em;
+    font-feature-settings: "cv01", "cv02", "ss01";
+  }
+  /* Monospace fallback for paths/filenames */
+  code, pre, kbd {
+    font-feature-settings: "tnum";
   }
 }

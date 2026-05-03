@@ -8,7 +8,8 @@ export const Channels = {
   // Shell
   SHELL_OPEN_EXTERNAL: "shell:open-external",
   // PDF operations
-  PDF_UNLOCK: "pdf:unlock",
+  PDF_UNLOCK:  "pdf:unlock",
+  PDF_PROTECT: "pdf:protect",
 } as const
 
 export type ChannelName = (typeof Channels)[keyof typeof Channels]

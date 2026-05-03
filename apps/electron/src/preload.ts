@@ -17,18 +17,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // ── PDF operations ────────────────────────────────────────────────────────
   pdf: {
-    /**
-     * Unlock a password-protected PDF.
-     * @param buffer  - ArrayBuffer of the input PDF
-     * @param password - The PDF password
-     * @param fileName - Original filename for the download
-     * @returns base64-encoded decrypted PDF or an error
-     */
     unlock: (
       buffer: ArrayBuffer,
       password: string,
       fileName: string
     ): Promise<{ success: true; data: string; fileName: string } | { success: false; error: string }> =>
       ipcRenderer.invoke("pdf:unlock", new Uint8Array(buffer), password, fileName),
+
+    protect: (
+      buffer: ArrayBuffer,
+      password: string,
+      fileName: string
+    ): Promise<{ success: true; data: string; fileName: string } | { success: false; error: string }> =>
+      ipcRenderer.invoke("pdf:protect", new Uint8Array(buffer), password, fileName),
   },
 });
