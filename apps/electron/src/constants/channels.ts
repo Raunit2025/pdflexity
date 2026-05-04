@@ -13,6 +13,9 @@ export const Channels = {
   PDF_COMPARE: "pdf:compare",
   PDF_MERGE:   "pdf:merge",
   PDF_SPLIT:   "pdf:split",
+  PDF_SIGN:    "pdf:sign",
+  PDF_VERIFY:  "pdf:verify",
+  PDF_CERT_INFO: "pdf:cert-info",
 } as const
 
 export type ChannelName = (typeof Channels)[keyof typeof Channels]

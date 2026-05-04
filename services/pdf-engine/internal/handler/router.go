@@ -21,6 +21,12 @@ func Route(enc *json.Encoder, cmd model.Command) {
 		handleMerge(enc, cmd)
 	case "split":
 		handleSplit(enc, cmd)
+	case "sign":
+		HandleSign(enc, cmd)
+	case "verify":
+		HandleVerify(enc, cmd)
+	case "certInfo":
+		HandleCertInfo(enc, cmd)
 	default:
 		writeError(enc, fmt.Sprintf("unknown operation: %q", cmd.Op))
 	}

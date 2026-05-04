@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/comp
 
 interface PageCardProps {
   page: PdfPage
-  colorInfo?: { bg: string; border: string; ring: string }
+  colorInfo?: { bg: string; border: string; ring: string; text: string }
   onDelete: (id: string) => void
   onRotate: (id: string) => void
   onAddBlank: (afterId: string) => void
@@ -83,7 +83,7 @@ export function PageCard({ page, colorInfo, onDelete, onRotate, onAddBlank }: Pa
       </div>
 
       {/* Add Blank Page (floating on the right border) */}
-      <TooltipProvider delayDuration={0}>
+      <TooltipProvider delay={0}>
         <Tooltip>
           <TooltipTrigger
             onClick={(e) => { e.stopPropagation(); onAddBlank(page.id) }}

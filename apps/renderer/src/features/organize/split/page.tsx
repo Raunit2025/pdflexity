@@ -37,8 +37,9 @@ export function SplitPage() {
         throw new Error("Size mode is not yet implemented.")
       }
       
-      const result = await window.electronAPI.pdf.split(buffer, file.name, pageRanges, mergeOutput)
+      const result = await window.electronAPI?.pdf.split(buffer, file.name, pageRanges, mergeOutput)
       
+      if (!result) throw new Error("Electron API is not available")
       if (!result.success) {
         throw new Error(result.error)
       }

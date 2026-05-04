@@ -10,7 +10,7 @@ export type PdfPage = {
 export type UploadedFile = {
   id: string
   name: string
-  color: { bg: string; border: string; ring: string }
+  color: { bg: string; border: string; ring: string; text: string }
   file: File
   numPages: number
 }

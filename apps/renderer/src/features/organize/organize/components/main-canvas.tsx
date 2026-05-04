@@ -14,7 +14,7 @@ interface MainCanvasProps {
 export function MainCanvas({ pages, files, onDeletePage, onRotatePage, onAddBlank }: MainCanvasProps) {
   // Create a map of fileId to color object
   const colorMap = React.useMemo(() => {
-    const map = new Map<string, { bg: string; border: string; ring: string }>()
+    const map = new Map<string, { bg: string; border: string; ring: string; text: string }>()
     files.forEach(f => map.set(f.id, f.color))
     return map
   }, [files])

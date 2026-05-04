@@ -57,5 +57,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
       | { success: false; error: string }
     > =>
       ipcRenderer.invoke("pdf:split", new Uint8Array(buffer), fileName, pageRanges, mergeOutput),
+
+    sign: (options: any): Promise<{ success: true; data: string; fileName: string } | { success: false; error: string }> =>
+      ipcRenderer.invoke("pdf:sign", options),
+
+    verify: (buffer: ArrayBuffer): Promise<{ success: true; data: any } | { success: false; error: string }> =>
+      ipcRenderer.invoke("pdf:verify", new Uint8Array(buffer)),
+
+    certInfo: (certPath: string, passphrase: string): Promise<{ success: true; data: any } | { success: false; error: string }> =>
+      ipcRenderer.invoke("pdf:cert-info", certPath, passphrase),
   },
 });

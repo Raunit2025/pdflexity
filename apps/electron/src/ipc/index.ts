@@ -4,8 +4,8 @@ import { registerUnlockHandler }  from "./pdf/unlock";
 import { registerProtectHandler } from "./pdf/protect";
 import { registerCompareHandler } from "./pdf/compare";
 import { registerMergeHandler } from "./pdf/merge";
-
 import { registerSplitHandler } from "./pdf/split";
+import { registerSignHandlers } from "./pdf/sign";
 
 /**
  * Central IPC router.
@@ -32,4 +32,5 @@ export function registerIpcHandlers(): void {
   registerCompareHandler();
   registerMergeHandler();
   registerSplitHandler();
+  registerSignHandlers();
 }
