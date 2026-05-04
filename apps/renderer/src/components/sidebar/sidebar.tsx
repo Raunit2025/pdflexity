@@ -24,7 +24,6 @@ const navGroups: NavGroup[] = [
       { label: "Merge PDF",    href: "/organize/merge",    icon: Merge       },
       { label: "Split PDF",    href: "/organize/split",    icon: Scissors    },
       { label: "Organize PDF", href: "/organize/organize", icon: ListOrdered },
-      { label: "Scan to PDF",  href: "/organize/scan",     icon: ScanLine    },
     ],
   },
   {
@@ -46,19 +45,6 @@ const navGroups: NavGroup[] = [
     ],
   },
 ]
-
-function PdflexityLogo({ size = 28 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect width="28" height="28" rx="7" fill="#10b981" fillOpacity="0.15" />
-      <rect x="1" y="1" width="26" height="26" rx="6" stroke="#10b981" strokeOpacity="0.4" strokeWidth="1" />
-      <path d="M8 6h8l4 4v12a1 1 0 01-1 1H8a1 1 0 01-1-1V7a1 1 0 011-1z" stroke="#10b981" strokeWidth="1.4" strokeLinejoin="round" fill="none" />
-      <path d="M16 6v4h4" stroke="#10b981" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M10 13h8M10 16h6M10 19h4" stroke="#10b981" strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M18 13.5l-2 3h2l-2 3" stroke="#34d399" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -83,17 +69,14 @@ export function Sidebar() {
 
         {/* Brand Header */}
         <div className={cn("flex shrink-0 items-center px-3 pb-4", collapsed ? "justify-center" : "justify-between")}>
-          {/* Logo + title */}
-          <div className="flex items-center gap-2.5 overflow-hidden">
-            <div className="shrink-0 drop-shadow-[0_0_8px_rgba(16,185,129,0.6)]">
-              <PdflexityLogo size={28} />
-            </div>
-            {!collapsed && (
-              <span className="truncate text-[15px] font-semibold text-sidebar-foreground" style={{ letterSpacing: "0.06em" }}>
+          {/* Title */}
+          {!collapsed && (
+            <div className="flex items-center overflow-hidden ml-2">
+              <span className="truncate text-[22px] font-bold text-sidebar-foreground tracking-[0.1em]">
                 pdflexity
               </span>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Always-visible collapse/expand toggle */}
           <Tooltip>
@@ -151,12 +134,12 @@ function NavGroup({ group, collapsed, pathname }: { group: NavGroup; collapsed: 
     <Collapsible open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger className={cn(
         "group flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] font-medium transition-all duration-150",
-        hasActiveChild ? "text-[#6ee7b7]" : "text-sidebar-foreground/50 hover:text-sidebar-foreground/80"
+        hasActiveChild ? "text-[#6ee7b7]" : "text-sidebar-foreground/75 hover:text-sidebar-foreground"
       )}>
         <div className="flex items-center gap-2.5">
           <GroupIcon className={cn(
             "h-[15px] w-[15px] shrink-0 transition-colors",
-            hasActiveChild ? "text-[#34d399]" : "text-sidebar-foreground/30 group-hover:text-sidebar-foreground/60"
+            hasActiveChild ? "text-[#34d399]" : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground/80"
           )} />
           <span className="tracking-[0.01em]">{group.title}</span>
         </div>
@@ -186,7 +169,7 @@ function NavLeaf({ item, active, collapsed }: { item: NavItem; active: boolean; 
         collapsed ? "h-9 w-9 justify-center mx-auto" : "px-2.5 py-[7px]",
         active
           ? "bg-[#10b981]/12 text-sidebar-foreground"
-          : "text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground/90"
+          : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-foreground"
       )}
       style={active && !collapsed ? { boxShadow: "inset 2px 0 0 #10b981" } : undefined}
     >
@@ -198,7 +181,7 @@ function NavLeaf({ item, active, collapsed }: { item: NavItem; active: boolean; 
       )}
       <Icon className={cn(
         "relative shrink-0 h-[14px] w-[14px] transition-colors duration-150",
-        active ? "text-[#34d399]" : "text-sidebar-foreground/30 group-hover:text-sidebar-foreground/70"
+        active ? "text-[#34d399]" : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground/80"
       )} />
       {!collapsed && <span className="relative truncate font-[430]">{item.label}</span>}
     </Link>

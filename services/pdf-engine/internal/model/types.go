@@ -7,8 +7,13 @@ type Command struct {
 	InputPath   string   `json:"inputPath"`
 	InputPathB  string   `json:"inputPathB,omitempty"`  // compare: second input
 	InputPaths  []string `json:"inputPaths,omitempty"`  // merge: multiple inputs
-	OutputPath  string   `json:"outputPath"`
+	OutputPath  string   `json:"outputPath"` // or OutputDir for split
 	Password    string   `json:"password,omitempty"`
+	
+	// Split operations
+	PageRanges  []string `json:"pageRanges,omitempty"`  // e.g., ["1-3", "5"]
+	MergeOutput bool     `json:"mergeOutput,omitempty"` // true = trim to single file
+
 }
 
 // Response is the JSON-RPC result written to stdout.

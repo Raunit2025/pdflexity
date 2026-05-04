@@ -31,15 +31,19 @@ export default function MergePdfPage() {
       id: generateId(),
       file: f
     }))
-    patch({
-      files: [...state.files, ...wrappedFiles],
+    setState(prev => ({
+      ...prev,
+      files: [...prev.files, ...wrappedFiles],
       errorMessage: null,
-    })
+    }))
   }
 
   function handleRemoveFile(id: string) {
-    const next = state.files.filter(f => f.id !== id)
-    patch({ files: next, errorMessage: null })
+    setState(prev => ({
+      ...prev,
+      files: prev.files.filter(f => f.id !== id),
+      errorMessage: null
+    }))
   }
 
   function handleReorder(newFiles: MergeFile[]) {

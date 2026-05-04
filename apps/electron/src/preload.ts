@@ -45,5 +45,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
       const names = files.map(f => f.name);
       return ipcRenderer.invoke("pdf:merge", buffers, names, fileName);
     },
+
+    split: (
+      buffer: ArrayBuffer,
+      fileName: string,
+      pageRanges: string[],
+      mergeOutput: boolean
+    ): Promise<
+      | { success: true; data: ArrayBuffer; fileName: string; isMultiple?: false }
+      | { success: true; data: { name: string; buffer: ArrayBuffer }[]; isMultiple: true }
+      | { success: false; error: string }
+    > =>
+      ipcRenderer.invoke("pdf:split", new Uint8Array(buffer), fileName, pageRanges, mergeOutput),
   },
 });

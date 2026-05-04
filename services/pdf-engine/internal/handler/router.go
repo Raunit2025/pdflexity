@@ -19,6 +19,8 @@ func Route(enc *json.Encoder, cmd model.Command) {
 		handleCompare(enc, cmd)
 	case "merge":
 		handleMerge(enc, cmd)
+	case "split":
+		handleSplit(enc, cmd)
 	default:
 		writeError(enc, fmt.Sprintf("unknown operation: %q", cmd.Op))
 	}

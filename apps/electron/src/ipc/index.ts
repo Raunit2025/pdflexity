@@ -5,6 +5,8 @@ import { registerProtectHandler } from "./pdf/protect";
 import { registerCompareHandler } from "./pdf/compare";
 import { registerMergeHandler } from "./pdf/merge";
 
+import { registerSplitHandler } from "./pdf/split";
+
 /**
  * Central IPC router.
  * Import and call this once from main.ts.
@@ -29,4 +31,5 @@ export function registerIpcHandlers(): void {
   registerProtectHandler();
   registerCompareHandler();
   registerMergeHandler();
+  registerSplitHandler();
 }
