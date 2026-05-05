@@ -11,12 +11,31 @@ interface GoCommand {
   inputPaths?: string[]; // merge: multiple input PDFs
   outputPath?: string;
   password?: string;
+  // Signing operations
+  certPath?: string;
+  passphrase?: string;
+  page?: number;
+  zone?: any;
+  reason?: string;
+  location?: string;
+  contact?: string;
+  appearance?: any;
+  // Redaction operations
+  marks?: any[];
+  query?: string;
+  caseSensitive?: boolean;
+  regex?: boolean;
+  scale?: number;
+  // Split operations
+  pageRanges?: string[];
+  mergeOutput?: boolean;
 }
 
 interface GoResponse {
   success: boolean;
   outputPath?: string;
   error?: string;
+  data?: any;
 }
 
 // ─── GoBridge ────────────────────────────────────────────────────────────────

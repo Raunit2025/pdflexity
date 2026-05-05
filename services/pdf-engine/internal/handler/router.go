@@ -27,6 +27,14 @@ func Route(enc *json.Encoder, cmd model.Command) {
 		HandleVerify(enc, cmd)
 	case "certInfo":
 		HandleCertInfo(enc, cmd)
+	case "redactInfo":
+		handleRedactInfo(enc, cmd)
+	case "redactSearch":
+		handleRedactSearch(enc, cmd)
+	case "redactPreview":
+		handleRedactPreview(enc, cmd)
+	case "redact":
+		handleRedact(enc, cmd)
 	default:
 		writeError(enc, fmt.Sprintf("unknown operation: %q", cmd.Op))
 	}

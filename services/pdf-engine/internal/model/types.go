@@ -15,6 +15,60 @@ type SignatureAppearance struct {
 	ShowReason bool `json:"showReason"`
 }
 
+// RedactionMark defines a region to redact in PDF point coordinates
+type RedactionMark struct {
+	Page       int     `json:"page"`
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+	Width      float64 `json:"width"`
+	Height     float64 `json:"height"`
+	FillColor  string  `json:"fillColor,omitempty"`
+	Label      string  `json:"label,omitempty"`
+	LabelColor string  `json:"labelColor,omitempty"`
+}
+
+// PageDim describes a single page's dimensions in PDF points
+type PageDim struct {
+	Page   int     `json:"page"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}
+
+// RedactionInfoResponse for /info endpoint
+type RedactionInfoResponse struct {
+	PageCount int        `json:"pageCount"`
+	Pages     []PageDim `json:"pages"`
+}
+
+// SearchMatch represents a found text instance with its bounding box
+type SearchMatch struct {
+	Page   int     `json:"page"`
+	Text   string  `json:"text"`
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}
+
+// SearchResponse for /search endpoint
+type SearchResponse struct {
+	Matches []SearchMatch `json:"matches"`
+	Total   int           `json:"total"`
+}
+
+// PreviewResponse for /preview endpoint
+type PreviewResponse struct {
+	ImageBase64 string `json:"imageBase64"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+}
+
+// RedactionResult for successful redact operation
+type RedactionResult struct {
+	MarksApplied   int   `json:"marksApplied"`
+	PagesAffected  []int `json:"pagesAffected"`
+}
+
 // Command is the JSON-RPC request read from stdin.
 // One JSON object per line — never batched.
 type Command struct {
@@ -38,6 +92,13 @@ type Command struct {
 	Location    string               `json:"location,omitempty"`
 	Contact     string               `json:"contact,omitempty"`
 	Appearance  *SignatureAppearance `json:"appearance,omitempty"`
+
+	// Redaction operations
+	Marks         []RedactionMark `json:"marks,omitempty"`
+	Query         string          `json:"query,omitempty"`
+	CaseSensitive bool            `json:"caseSensitive,omitempty"`
+	Regex         bool            `json:"regex,omitempty"`
+	Scale         float64         `json:"scale,omitempty"`
 }
 
 // Response is the JSON-RPC result written to stdout.
@@ -47,4 +108,3 @@ type Response struct {
 	Error      string `json:"error,omitempty"`
 	Data       any    `json:"data,omitempty"` // Flexible data payload for certInfo, verify, etc.
 }
-

@@ -3,6 +3,43 @@ import { contextBridge, ipcRenderer } from "electron";
 // ─── Typed API exposed to renderer via contextBridge ─────────────────────────
 // Never expose ipcRenderer directly — always proxy through here.
 
+// Redaction types
+interface RedactionMark {
+  page: number
+  x: number
+  y: number
+  width: number
+  height: number
+  fillColor?: string
+  label?: string
+  labelColor?: string
+}
+
+interface RedactionInfo {
+  pageCount: number
+  pages: { page: number; width: number; height: number }[]
+}
+
+interface SearchMatch {
+  page: number
+  text: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface SearchResult {
+  matches: SearchMatch[]
+  total: number
+}
+
+interface PreviewResult {
+  imageBase64: string
+  width: number
+  height: number
+}
+
 contextBridge.exposeInMainWorld("electronAPI", {
   // ── App info ──────────────────────────────────────────────────────────────
   getPlatform: (): Promise<string> =>
@@ -66,5 +103,36 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
     certInfo: (certPath: string, passphrase: string): Promise<{ success: true; data: any } | { success: false; error: string }> =>
       ipcRenderer.invoke("pdf:cert-info", certPath, passphrase),
+
+    // Redaction operations
+    redact: {
+      info: (
+        buffer: ArrayBuffer
+      ): Promise<{ success: true; data: RedactionInfo } | { success: false; error: string }> =>
+        ipcRenderer.invoke("pdf:redact-info", new Uint8Array(buffer)),
+
+      search: (
+        buffer: ArrayBuffer,
+        query: string,
+        caseSensitive?: boolean,
+        regex?: boolean
+      ): Promise<{ success: true; data: SearchResult } | { success: false; error: string }> =>
+        ipcRenderer.invoke("pdf:redact-search", new Uint8Array(buffer), query, caseSensitive ?? false, regex ?? false),
+
+      preview: (
+        buffer: ArrayBuffer,
+        page: number,
+        scale?: number,
+        marks?: RedactionMark[]
+      ): Promise<{ success: true; data: PreviewResult } | { success: false; error: string }> =>
+        ipcRenderer.invoke("pdf:redact-preview", new Uint8Array(buffer), page, scale ?? 1.5, marks ?? []),
+
+      apply: (
+        buffer: ArrayBuffer,
+        fileName: string,
+        marks: RedactionMark[]
+      ): Promise<{ success: true; data: string; fileName: string; marksApplied: number; pagesAffected: number[] } | { success: false; error: string }> =>
+        ipcRenderer.invoke("pdf:redact", new Uint8Array(buffer), fileName, marks),
+    },
   },
 });

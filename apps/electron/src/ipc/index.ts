@@ -6,6 +6,7 @@ import { registerCompareHandler } from "./pdf/compare";
 import { registerMergeHandler } from "./pdf/merge";
 import { registerSplitHandler } from "./pdf/split";
 import { registerSignHandlers } from "./pdf/sign";
+import { registerRedactHandlers } from "./pdf/redact";
 
 /**
  * Central IPC router.
@@ -33,4 +34,5 @@ export function registerIpcHandlers(): void {
   registerMergeHandler();
   registerSplitHandler();
   registerSignHandlers();
+  registerRedactHandlers();
 }

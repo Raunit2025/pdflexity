@@ -16,6 +16,11 @@ export const Channels = {
   PDF_SIGN:    "pdf:sign",
   PDF_VERIFY:  "pdf:verify",
   PDF_CERT_INFO: "pdf:cert-info",
+  // PDF Redaction
+  PDF_REDACT_INFO:   "pdf:redact-info",
+  PDF_REDACT_SEARCH: "pdf:redact-search",
+  PDF_REDACT_PREVIEW: "pdf:redact-preview",
+  PDF_REDACT:       "pdf:redact",
 } as const
 
 export type ChannelName = (typeof Channels)[keyof typeof Channels]

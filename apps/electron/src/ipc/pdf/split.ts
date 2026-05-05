@@ -1,6 +1,6 @@
 import { ipcMain } from "electron";
 import { Channels } from "../../constants/channels";
-import { executeGoCommand } from "../../services/go-bridge";
+import { goBridge } from "../../services/go-bridge";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -31,7 +31,7 @@ export function registerSplitHandler(): void {
           await fs.mkdir(outputPath);
         }
 
-        const result = await executeGoCommand({
+        const result = await goBridge.send({
           op: "split",
           inputPath,
           outputPath,
