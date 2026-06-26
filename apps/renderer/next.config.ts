@@ -1,25 +1,28 @@
 import type { NextConfig } from "next";
 
-const isProd = process.env.NODE_ENV === "production";
-
 const nextConfig: NextConfig = {
-  // Export as static files for Electron in production
-  output: isProd ? "export" : undefined,
+  // Tauri requires a static HTML export. 
+  // It's best practice to enable this unconditionally so your dev 
+  // environment matches your production static build exactly.
+  output: "export",
 
-  // Required for Electron file:// protocol in production
-  assetPrefix: isProd ? "./" : undefined,
+  // ⚠️ REMOVED: assetPrefix: isProd ? "./" : undefined
+  // Electron needed this because it uses the raw `file://` protocol. 
+  // Tauri serves files securely over a custom local scheme (tauri:// or https://tauri.localhost).
+  // Leaving "./" in will actually BREAK asset loading in Tauri.
 
-  // Disable image optimization for Electron static export
+  // Disable server-side image optimization (Tauri has no Node server to do this)
   images: {
-    unoptimized: isProd,
+    unoptimized: true,
   },
 
-  // Disable server-based features not needed in Electron
-  trailingSlash: isProd,
+  // Generates physical folders like `/about/index.html` instead of `about.html`.
+  // Recommended for static exports to prevent routing bugs in the webview.
+  trailingSlash: true,
 
-  // Environment variables accessible in renderer
+  // Replace Electron env variable
   env: {
-    IS_ELECTRON: "true",
+    IS_TAURI: "true",
   },
 };
 

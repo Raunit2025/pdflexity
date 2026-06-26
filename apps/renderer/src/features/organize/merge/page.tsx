@@ -2,12 +2,13 @@
 
 import * as React from "react"
 import { Merge, ShieldCheck, AlertCircle, Loader2 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { invoke } from "@tauri-apps/api/core"
 
 import type { MergeState, MergeFile } from "./types"
 import { DropZone } from "./components/drop-zone"
 import { FileList } from "./components/file-list"
 import { SuccessCard } from "./components/success-card"
+import { save } from "@tauri-apps/plugin-dialog"
 
 import { useMergeStore } from "@/stores/use-merge-store"
 
@@ -17,8 +18,6 @@ function generateId() {
 
 export default function MergePdfPage() {
   const store = useMergeStore()
-
-  // ── Handlers ────────────────────────────────────────────────────────────
 
   function handleFilesAdded(newFiles: File[]) {
     const wrappedFiles: MergeFile[] = newFiles.map(f => ({
@@ -40,54 +39,65 @@ export default function MergePdfPage() {
     store.reset()
   }
 
-  // ── Engine Call ─────────────────────────────────────────────────────────
-
   async function runMerge() {
     if (store.files.length < 2) {
       store.setError("Please select at least two PDF files to merge.")
       return
     }
 
+    // 1. Prompt Native 'Save As' Dialog FIRST
+    const savePath = await save({
+      title: 'Save Merged PDF',
+      defaultPath: 'merged_document.pdf',
+      filters: [{ name: 'PDF Document', extensions: ['pdf'] }]
+    })
+
+    // If user clicks "Cancel" on the dialog, safely abort
+    if (!savePath) return
+
     store.setStep("loading")
+    const inputPaths: string[] = []
 
     try {
-      // 1. Convert all files to ArrayBuffer and pair with name
-      const fileData = await Promise.all(store.files.map(async f => ({
-        buffer: await f.file.arrayBuffer(),
-        name: f.file.name
-      })))
-
-      // 2. Call Electron IPC
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const api = (window as any).electronAPI?.pdf
-      if (!api?.merge) throw new Error("IPC merge not found — is Electron running?")
-
-      const defaultName = "merged_document.pdf"
-      const result = await api.merge(fileData, defaultName)
-
-      if (!result.success) {
-        throw new Error(result.error ?? "Merge failed")
+      for (const f of store.files) {
+        const buffer = await f.file.arrayBuffer()
+        const bytes = Array.from(new Uint8Array(buffer))
+        const path = await invoke<string>('write_temp_file', { bytes })
+        inputPaths.push(path)
       }
 
-      // 3. Convert base64 result to Blob URL
-      const binary = atob(result.data)
-      const bytes = new Uint8Array(binary.length)
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-      const blob = new Blob([bytes], { type: "application/pdf" })
-      const url = URL.createObjectURL(blob)
+      // 2. Command Go engine to write DIRECTLY to the user's chosen path!
+      const command = {
+        op: "merge",
+        inputPaths: inputPaths,
+        outputPath: savePath // <--- Direct Save! No temp output path needed.
+      }
 
-      store.setResult(url, result.fileName)
+      const responseStr = await invoke<string>('run_pdf_engine', { 
+        commandJson: JSON.stringify(command) 
+      })
+      const response = JSON.parse(responseStr)
+
+      if (!response.success) {
+        throw new Error(response.error ?? "Merge failed")
+      }
+
+      // Cleanup input temp files
+      for (const path of inputPaths) {
+        await invoke('delete_temp_file', { path }).catch(() => {})
+      }
+
+      // File is already saved natively, just update the UI to success!
+      store.setResult(savePath, "merged_document.pdf")
+
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       store.setError(msg)
     }
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────
-
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col p-8 pb-4">
-      {/* Header */}
       <div className="mb-6 shrink-0 text-center">
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10 ring-1 ring-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.15)]">
           <Merge className="h-8 w-8 text-emerald-500" />
@@ -98,7 +108,6 @@ export default function MergePdfPage() {
         </p>
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 min-h-0 flex flex-col">
         {store.step === "success" && store.downloadUrl && store.fileName ? (
           <SuccessCard
@@ -132,7 +141,7 @@ export default function MergePdfPage() {
                     disabled={store.step === "loading" || store.files.length < 2}
                     className="group relative overflow-hidden rounded-xl bg-emerald-500 px-8 py-3.5 font-bold text-white shadow-lg shadow-emerald-500/25 transition-all hover:bg-emerald-600 hover:shadow-emerald-500/40 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+                    <div className="absolute inset-0 -translate-x-full bg-linear-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
                     <span className="relative flex items-center justify-center gap-2">
                       {store.step === "loading" ? (
                         <>
@@ -151,7 +160,6 @@ export default function MergePdfPage() {
               </div>
             )}
 
-            {/* Error message */}
             {(store.errorMessage || (store.files.length === 1 && store.step !== "success")) && (
               <div className="flex items-center gap-3 rounded-xl bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/20 animate-in fade-in duration-300">
                 <AlertCircle className="h-4 w-4 shrink-0" />

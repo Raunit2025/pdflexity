@@ -1,47 +1,61 @@
 "use client"
 
 import { useCallback, useEffect, useRef } from "react"
+import { invoke } from "@tauri-apps/api/core"
+import { listen } from "@tauri-apps/api/event"
+import { save } from "@tauri-apps/plugin-dialog"
 import { useOcrStore } from "@/stores/use-ocr-store"
 import type { OCRProgressEvent, OCRPageResult } from "@/features/optimize/ocr/types"
 
+// Helper to check if we are running inside the native Tauri window
+const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
 /**
- * Hook that wires the OCR Zustand store to Electron IPC events.
+ * Hook that wires the OCR Zustand store to Tauri events.
  * Handles: starting OCR, cancelling, listening for streaming progress,
  * and exporting results.
  */
 export function useOcrPipeline() {
-  const store = useOcrStore()
   const listenerRegistered = useRef(false)
 
-  // Register IPC event listeners for streaming progress
+  // Register Tauri event listeners for streaming progress
   useEffect(() => {
-    if (typeof window === "undefined" || !(window as any).electronAPI) return
+    if (!isTauri()) return // Skip native listeners if running in a normal web browser
     if (listenerRegistered.current) return
     listenerRegistered.current = true
 
-    const api = (window as any).electronAPI.pdf?.ocr
-    if (!api) return
+    let unlistenFn: (() => void) | null = null
 
-    api.onProgress((_event: any, data: OCRProgressEvent) => {
-      if (data.status) {
-        useOcrStore.getState().setStep(data.status)
+    listen<string>('ocr-event', (event) => {
+      try {
+        const data = JSON.parse(event.payload)
+        const store = useOcrStore.getState()
+        
+        if (data.type === 'progress') {
+          if (data.status) store.setStep(data.status)
+          if (data.currentPage && data.totalPages) {
+            store.setProgress(data.currentPage, data.totalPages)
+          }
+        } else if (data.type === 'page-result') {
+          store.addPageResult(data.pageResult as unknown as OCRPageResult)
+        } else if (data.type === 'page-image') {
+          store.setPageImage(data.pageImage.page, data.pageImage.imageBase64)
+        } else if (data.type === 'complete') {
+          store.setJobId('job-complete')
+          store.setCompletionData(data.overallConfidence ?? 0, data.detectedLanguages ?? [])
+        } else if (data.type === 'error') {
+          store.setError(data.error || "OCR Error")
+          store.setStep("idle")
+        }
+      } catch (e) {
+        console.error("Failed to parse OCR event:", e)
       }
-      if (data.currentPage && data.totalPages) {
-        useOcrStore.getState().setProgress(data.currentPage, data.totalPages)
-      }
-    })
-
-    api.onPageResult((_event: any, data: OCRProgressEvent) => {
-      if (data.type === "page-result" && data.pageResult) {
-        useOcrStore.getState().addPageResult(data.pageResult as unknown as OCRPageResult)
-      }
-      if (data.type === "page-image" && data.pageImage) {
-        useOcrStore.getState().setPageImage(data.pageImage.page, data.pageImage.imageBase64)
-      }
+    }).then(unlisten => {
+      unlistenFn = unlisten
     })
 
     return () => {
-      api.removeListeners()
+      if (unlistenFn) unlistenFn()
       listenerRegistered.current = false
     }
   }, [])
@@ -51,9 +65,8 @@ export function useOcrPipeline() {
     const { uploadedFile, options } = useOcrStore.getState()
     if (!uploadedFile) return
 
-    const api = (window as any).electronAPI?.pdf?.ocr
-    if (!api) {
-      // Fallback: use mock data for development without Electron
+    if (!isTauri()) {
+      // Fallback: use mock data for browser development
       await runMockOcr()
       return
     }
@@ -61,96 +74,89 @@ export function useOcrPipeline() {
     useOcrStore.getState().setStep("uploading")
 
     try {
-      const result = await api.start(
-        uploadedFile.buffer,
-        uploadedFile.name,
-        options.languages,
-        options.dpi
-      )
+      const bytes = Array.from(new Uint8Array(uploadedFile.buffer))
+      const inputPath = await invoke<string>('write_temp_file', { bytes })
+      const outputDir = await invoke<string>('create_temp_dir')
 
-      if (result.success) {
-        useOcrStore.getState().setJobId(result.jobId)
-        useOcrStore.getState().setCompletionData(
-          result.data?.overallConfidence ?? 0,
-          result.data?.detectedLanguages ?? []
-        )
-      } else {
-        useOcrStore.getState().setError(result.error || "OCR processing failed")
+      const command = {
+        op: "ocr-start",
+        inputPath,
+        outputPath: outputDir,
+        languages: options.languages,
+        dpi: options.dpi
       }
+
+      await invoke('start_ocr_stream', { commandJson: JSON.stringify(command) })
     } catch (err: any) {
       useOcrStore.getState().setError(err.message || "OCR processing failed")
+      useOcrStore.getState().setStep("idle")
     }
   }, [])
 
   // Cancel OCR
   const cancelOcr = useCallback(async () => {
-    const { jobId } = useOcrStore.getState()
-    if (!jobId) return
-
-    const api = (window as any).electronAPI?.pdf?.ocr
-    if (api) {
-      await api.cancel(jobId)
+    if (isTauri()) {
+      await invoke('cancel_ocr_stream').catch(console.error)
     }
     useOcrStore.getState().setStep("idle")
   }, [])
 
-  // Export results
+  // Export results natively
   const exportResults = useCallback(async (format: string) => {
     const { uploadedFile, pageResults, editedBlocks } = useOcrStore.getState()
     if (!uploadedFile) return
 
-    const api = (window as any).electronAPI?.pdf?.ocr
-    if (!api) {
-      // Mock export for development
-      alert(`Export as ${format} — requires Electron runtime`)
+    if (!isTauri()) {
+      // Mock export for browser development
+      alert(`Export as ${format} — requires Tauri native runtime`)
       return
     }
 
     try {
-      // Convert page results to serializable format
+      const mimeMap: Record<string, string[]> = {
+        "docx": ["docx"],
+        "json": ["json"],
+        "searchable-pdf": ["pdf"],
+        "editable-pdf": ["pdf"],
+      }
+      
+      const savePath = await save({
+        title: 'Export OCR Results',
+        defaultPath: `exported_document.${mimeMap[format]?.[0] || 'pdf'}`,
+        filters: [{ name: format.toUpperCase(), extensions: mimeMap[format] || ['pdf'] }]
+      })
+      
+      if (!savePath) return
+
       const ocrData = Array.from(pageResults.values())
       const edits: Record<string, any> = {}
       for (const [id, block] of editedBlocks) {
         edits[id] = { text: block.text }
       }
 
-      const result = await api.export(
-        uploadedFile.buffer,
-        uploadedFile.name,
-        format,
-        ocrData,
-        edits
-      )
+      const bytes = Array.from(new Uint8Array(uploadedFile.buffer))
+      const inputPath = await invoke<string>('write_temp_file', { bytes })
 
-      if (result.success) {
-        // Create download from base64
-        const binaryStr = atob(result.data)
-        const bytes = new Uint8Array(binaryStr.length)
-        for (let i = 0; i < binaryStr.length; i++) {
-          bytes[i] = binaryStr.charCodeAt(i)
-        }
-
-        const mimeMap: Record<string, string> = {
-          "editable-pdf": "application/pdf",
-          "searchable-pdf": "application/pdf",
-          "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          "json": "application/json",
-        }
-
-        const blob = new Blob([bytes], { type: mimeMap[format] || "application/octet-stream" })
-        const url = URL.createObjectURL(blob)
-        useOcrStore.getState().setExportUrl(url)
-
-        // Trigger download
-        const a = document.createElement("a")
-        a.href = url
-        a.download = result.fileName
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-      } else {
-        useOcrStore.getState().setError(result.error || "Export failed")
+      const command = {
+        op: "ocr-export",
+        inputPath: inputPath,
+        outputPath: savePath,
+        exportFormat: format,
+        ocrData: JSON.stringify(ocrData),
+        edits: JSON.stringify(edits)
       }
+
+      const responseStr = await invoke<string>('run_pdf_engine', { 
+        commandJson: JSON.stringify(command) 
+      })
+      const response = JSON.parse(responseStr)
+
+      if (!response.success) throw new Error(response.error ?? "Export failed")
+
+      await invoke('delete_temp_file', { path: inputPath }).catch(() => {})
+      
+      useOcrStore.getState().setExportUrl("saved-natively")
+      
     } catch (err: any) {
       useOcrStore.getState().setError(err.message || "Export failed")
     }
@@ -160,7 +166,7 @@ export function useOcrPipeline() {
 }
 
 /**
- * Mock OCR pipeline for development without Electron/PaddleOCR.
+ * Mock OCR pipeline for development without Tauri/PaddleOCR.
  * Generates realistic-looking OCR results with simulated delays.
  */
 async function runMockOcr() {

@@ -1,11 +1,13 @@
 "use client"
 
 import * as React from "react"
+import { invoke } from "@tauri-apps/api/core"
 import { useSplitStore } from "@/stores/use-split-store"
 import { DropZone } from "./components/drop-zone"
 import { PreviewCanvas } from "./components/preview-canvas"
 import { ControlPanel } from "./components/control-panel"
 import { SuccessCard } from "../merge/components/success-card"
+import { save, open } from "@tauri-apps/plugin-dialog"
 
 export function SplitPage() {
   const step = useSplitStore(state => state.step)
@@ -22,13 +24,38 @@ export function SplitPage() {
 
   const handleSplit = async () => {
     if (!file) return
+    
+    let savePath = ""
+
+    // 1. Prompt Native Dialog based on output type
+    if (mergeOutput) {
+      // Asking for a single file save location
+      const result = await save({
+        title: 'Save Split PDF',
+        defaultPath: `split_${file.name}`,
+        filters: [{ name: 'PDF Document', extensions: ['pdf'] }]
+      })
+      if (!result) return // User cancelled
+      savePath = result
+    } else {
+      // Asking for a FOLDER to dump multiple extracted pages into
+      const result = await open({
+        title: 'Select Folder for Extracted Pages',
+        directory: true,   // <--- Lets user pick a folder natively
+        multiple: false
+      })
+      if (!result) return // User cancelled
+      savePath = result as string
+    }
+
     setStep("processing")
     setError(null)
     
     try {
       const buffer = await file.arrayBuffer()
-      let pageRanges: string[] = []
+      const bytes = Array.from(new Uint8Array(buffer))
       
+      let pageRanges: string[] = []
       if (mode === "range") {
         pageRanges = ranges.map(r => r.from === r.to ? `${r.from}` : `${r.from}-${r.to}`)
       } else if (mode === "pages") {
@@ -37,38 +64,31 @@ export function SplitPage() {
         throw new Error("Size mode is not yet implemented.")
       }
       
-      const result = await window.electronAPI?.pdf.split(buffer, file.name, pageRanges, mergeOutput)
-      
-      if (!result) throw new Error("Electron API is not available")
-      if (!result.success) {
-        throw new Error(result.error)
+      // Write input file to temp
+      const inputPath = await invoke<string>('write_temp_file', { bytes })
+
+      // 2. Command Go Engine to write DIRECTLY to the user's chosen path/folder!
+      const command = {
+        op: "split",
+        inputPath: inputPath,
+        outputPath: savePath, // <--- Direct Save!
+        pageRanges: pageRanges,
+        mergeOutput: mergeOutput
+      }
+
+      const responseStr = await invoke<string>('run_pdf_engine', { 
+        commandJson: JSON.stringify(command) 
+      })
+      const response = JSON.parse(responseStr)
+
+      if (!response.success) {
+        throw new Error(response.error ?? "Split failed")
       }
       
-      if (result.isMultiple) {
-        // Simple fallback: trigger multiple downloads for now,
-        // or a ZIP if we want to add JSZip later.
-        // For now, downloading them sequentially.
-        result.data.forEach((fileObj, index) => {
-          setTimeout(() => {
-            const blob = new Blob([fileObj.buffer], { type: "application/pdf" })
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement("a")
-            a.href = url
-            a.download = fileObj.name
-            a.click()
-            URL.revokeObjectURL(url)
-          }, index * 300)
-        })
-      } else {
-        const blob = new Blob([result.data], { type: "application/pdf" })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement("a")
-        a.href = url
-        a.download = result.fileName
-        a.click()
-        URL.revokeObjectURL(url)
-      }
+      // Cleanup input temp file
+      await invoke('delete_temp_file', { path: inputPath }).catch(() => {})
       
+      // Show success (Files are already magically on their hard drive!)
       setStep("success")
     } catch (err: any) {
       setError(err.message || "Failed to split PDF")
@@ -76,6 +96,7 @@ export function SplitPage() {
     }
   }
 
+  // ── Render ──────────────────────────────────────────────────────────────
   if (step === "upload") {
     return (
       <div className="flex h-full w-full items-center justify-center p-6">

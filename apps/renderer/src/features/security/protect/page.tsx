@@ -8,6 +8,10 @@ import {
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
+// ─── TAURI IMPORTS ────────────────────────────────────────────────────────────
+import { invoke } from "@tauri-apps/api/core"
+import { save } from "@tauri-apps/plugin-dialog"
+
 import type { ProtectState } from "./types"
 import { INITIAL_STATE }   from "./types"
 import { DropZone }        from "./components/drop-zone"
@@ -16,15 +20,6 @@ import { PasswordField }   from "./components/password-field"
 import { SuccessCard }     from "./components/success-card"
 
 import { useProtectStore } from "@/stores/use-protect-store"
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function base64ToObjectUrl(b64: string): string {
-  const binary = atob(b64)
-  const bytes  = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }))
-}
 
 // ─── Step Label ───────────────────────────────────────────────────────────────
 
@@ -59,11 +54,7 @@ function StepLabel({ n, text, hint, active = false, done = false }: {
 export default function ProtectPdfPage() {
   const store = useProtectStore()
   const [isDragging, setIsDragging] = React.useState(false)
-  const inputRef = React.useRef<HTMLInputElement>(null)
-
-  React.useEffect(() => {
-    return () => { if (store.downloadUrl) URL.revokeObjectURL(store.downloadUrl) }
-  }, [store.downloadUrl])
+  const inputRef = React.useRef<any>(null) // Fixed strict ref type error
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -86,19 +77,43 @@ export default function ProtectPdfPage() {
       return
     }
 
+    const savePath = await save({
+      title: 'Save Protected PDF',
+      defaultPath: `protected_${store.file.name}`,
+      filters: [{ name: 'PDF Document', extensions: ['pdf'] }]
+    })
+
+    if (!savePath) return
+
     store.setStep("protecting")
 
     try {
       const buffer = await store.file.arrayBuffer()
-      const api = window.electronAPI
-      if (!api?.pdf?.protect) throw new Error("Electron IPC not available.")
+      const bytes = Array.from(new Uint8Array(buffer))
+      const inputPath = await invoke<string>('write_temp_file', { bytes })
 
-      const result = await api.pdf.protect(buffer, store.password, store.file.name)
-      if (!result.success) throw new Error(result.error)
+      const command = {
+        op: "protect",
+        inputPath: inputPath,
+        outputPath: savePath,
+        password: store.password
+      }
 
-      store.setResult(base64ToObjectUrl(result.data), result.fileName)
+      const responseStr = await invoke<string>('run_pdf_engine', { 
+        commandJson: JSON.stringify(command) 
+      })
+      const response = JSON.parse(responseStr)
+
+      if (!response.success) {
+        throw new Error(response.error ?? "Failed to encrypt PDF")
+      }
+
+      await invoke('delete_temp_file', { path: inputPath }).catch(() => {})
+
+      store.setResult(savePath, `protected_${store.file.name}`)
     } catch (err: unknown) {
       store.setError(err instanceof Error ? err.message : "Unexpected error")
+      store.setStep("error")
     }
   }
 
@@ -123,8 +138,8 @@ export default function ProtectPdfPage() {
       <div className="flex h-full flex-col overflow-y-auto">
 
         {/* Header */}
-        <div className="relative flex shrink-0 items-center justify-between border-b border-border/60 dark:border-white/[0.06] px-8 py-5">
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#10b981]/30 to-transparent" />
+        <div className="relative flex shrink-0 items-center justify-between border-b border-border/60 dark:border-white/6 px-8 py-5">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-[#10b981]/30 to-transparent" />
 
           <div className="flex items-center gap-3.5">
             <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-[#10b981]/15 ring-1 ring-[#10b981]/25 shadow-[0_0_20px_rgba(16,185,129,0.15)]">
@@ -141,7 +156,7 @@ export default function ProtectPdfPage() {
             <TooltipTrigger className="flex h-8 w-8 cursor-default items-center justify-center rounded-lg text-muted-foreground/40 transition-colors hover:bg-muted/50 hover:text-muted-foreground">
               <Info className="h-4 w-4" />
             </TooltipTrigger>
-            <TooltipContent side="left" className="max-w-[200px] text-center text-xs">
+            <TooltipContent side="left" className="max-w-50 text-center text-xs">
               AES-256 encryption via <strong>pdfcpu</strong>. Your file never leaves this device.
             </TooltipContent>
           </Tooltip>
@@ -149,7 +164,7 @@ export default function ProtectPdfPage() {
 
         {/* Body */}
         <div className="flex flex-1 items-start justify-center px-8 py-10">
-          <div className="w-full max-w-[540px]">
+          <div className="w-full max-w-135">
 
             {/* Success */}
             {isSuccess && store.downloadUrl && (
@@ -165,10 +180,10 @@ export default function ProtectPdfPage() {
             {/* Main form */}
             {!isSuccess && (
               <div className="space-y-6 animate-in fade-in-0 duration-300">
-                <div className="relative overflow-hidden rounded-2xl border border-border dark:border-white/[0.07] bg-card dark:bg-white/[0.02]">
-                  <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#10b981]/40 to-transparent" />
+                <div className="relative overflow-hidden rounded-2xl border border-border dark:border-white/[0.07] bg-card dark:bg-white/2">
+                  <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-[#10b981]/40 to-transparent" />
 
-                  <div className="divide-y divide-border/50 dark:divide-white/[0.05]">
+                  <div className="divide-y divide-border/50 dark:divide-white/5">
 
                     {/* Step 1: Upload */}
                     <div className="p-6">
@@ -261,11 +276,11 @@ export default function ProtectPdfPage() {
                                 "focus-visible:ring-2 focus-visible:ring-[#10b981]/60",
                                 canProtect
                                   ? "bg-[#10b981] hover:bg-[#059669] hover:shadow-[0_0_30px_rgba(16,185,129,0.45)] active:scale-[0.99]"
-                                  : "cursor-not-allowed bg-muted/60 dark:bg-white/[0.06] text-foreground/25"
+                                  : "cursor-not-allowed bg-muted/60 dark:bg-white/6 text-foreground/25"
                               )}
                             >
                               {canProtect && (
-                                <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+                                <div className="absolute inset-0 -translate-x-full bg-linear-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
                               )}
                               <span className="relative flex items-center justify-center gap-2.5">
                                 {isProtecting ? (
@@ -289,12 +304,12 @@ export default function ProtectPdfPage() {
 
                 {/* Trust bar */}
                 <div className="flex items-center justify-center gap-4">
-                  <div className="h-px flex-1 bg-border/40 dark:bg-white/[0.05]" />
+                  <div className="h-px flex-1 bg-border/40 dark:bg-white/5" />
                   <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/40">
                     <ShieldCheck className="h-3 w-3" />
                     <span>File never leaves your device</span>
                   </div>
-                  <div className="h-px flex-1 bg-border/40 dark:bg-white/[0.05]" />
+                  <div className="h-px flex-1 bg-border/40 dark:bg-white/5" />
                 </div>
               </div>
             )}
