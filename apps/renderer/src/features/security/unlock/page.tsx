@@ -1,143 +1,208 @@
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
 import {
-  LockOpen, Lock, Loader2, ShieldCheck,
-  ArrowRight, Info, Zap,
-} from "lucide-react"
-import { cn } from "@/lib/utils"
+  LockOpen,
+  Lock,
+  Loader2,
+  ShieldCheck,
+  ArrowRight,
+  Info,
+  Zap,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip"
+} from "@/components/ui/tooltip";
 
-import type { UnlockState, UploadedFile } from "./types"
-import { DropZone }            from "./components/drop-zone"
-import { FileCard }            from "./components/file-card"
-import { PasswordInput }       from "./components/password-input"
-import { SuccessCard }         from "./components/success-card"
-import { AlreadyUnlockedCard } from "./components/already-unlocked-card"
+// ─── TAURI NATIVE IMPORTS ─────────────────────────────────────────────────────
+import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 
-import { useUnlockStore } from "@/stores/use-unlock-store"
+import type { UnlockState, UploadedFile } from "./types";
+import { DropZone } from "./components/drop-zone";
+import { FileCard } from "./components/file-card";
+import { PasswordInput } from "./components/password-input";
+import { SuccessCard } from "./components/success-card";
+import { AlreadyUnlockedCard } from "./components/already-unlocked-card";
+
+import { useUnlockStore } from "@/stores/use-unlock-store";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function base64ToObjectUrl(b64: string, mimeType = "application/pdf"): string {
-  const binary = atob(b64)
-  const bytes  = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return URL.createObjectURL(new Blob([bytes], { type: mimeType }))
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 async function isPdfEncrypted(file: File): Promise<boolean> {
-  const tailSize  = Math.min(file.size, 8192)
-  const buf       = await file.slice(file.size - tailSize).arrayBuffer()
-  return new TextDecoder("latin1").decode(buf).includes("/Encrypt")
+  const tailSize = Math.min(file.size, 8192);
+  const buf = await file.slice(file.size - tailSize).arrayBuffer();
+  return new TextDecoder("latin1").decode(buf).includes("/Encrypt");
 }
 
 // ─── Trust badges ─────────────────────────────────────────────────────────────
 
 const TRUST_ITEMS = [
   { icon: ShieldCheck, text: "100% local — no uploads" },
-  { icon: Zap,         text: "Powered by pdfcpu" },
-  { icon: LockOpen,    text: "All encryption types" },
-] as const
+  { icon: Zap, text: "Powered by Native Rust" },
+  { icon: LockOpen, text: "All encryption types" },
+] as const;
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function UnlockPdfPage() {
-  const store = useUnlockStore()
-  const [isDragging, setIsDragging]     = React.useState(false)
-  const [downloadName, setDownloadName] = React.useState("")
+  const store = useUnlockStore();
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [downloadName, setDownloadName] = React.useState("");
 
   // ── File select ────────────────────────────────────────────────────────────
 
   async function handleFileSelect(file: File) {
-    store.setStep("checking")
+    store.setStep("checking");
 
-    const encrypted = await isPdfEncrypted(file)
+    const encrypted = await isPdfEncrypted(file);
     const uploadedFile: UploadedFile = {
       file,
       name: file.name,
       sizeLabel: formatBytes(file.size),
       isEncrypted: encrypted,
-    }
+    };
 
     if (!encrypted) {
-      store.setAlreadyUnlocked(uploadedFile, URL.createObjectURL(file))
+      store.setAlreadyUnlocked(uploadedFile, URL.createObjectURL(file));
     } else {
-      store.setUploadedFile(uploadedFile)
+      store.setUploadedFile(uploadedFile);
     }
   }
 
   // ── Unlock ─────────────────────────────────────────────────────────────────
 
   async function handleUnlock() {
-    if (!store.uploadedFile || !store.password.trim()) return
-    store.setStep("unlocking")
+    if (!store.uploadedFile || !store.password.trim()) return;
+
+    let inputPath = "";
+    let tempOutputPath = "";
 
     try {
-      const buffer = await store.uploadedFile.file.arrayBuffer()
-      const api = window.electronAPI
-      if (!api?.pdf?.unlock) throw new Error("Electron IPC not available. Run the app in Electron.")
+      store.setStep("unlocking"); // Show the spinner immediately!
 
-      const result = await api.pdf.unlock(buffer, store.password, store.uploadedFile.name)
-      if (!result.success) throw new Error(result.error)
+      // 1. Write file to temp directory for Go to read
+      const buffer = await store.uploadedFile.file.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(buffer));
+      inputPath = await invoke<string>("write_temp_file", { bytes });
 
-      setDownloadName(result.fileName)
-      store.setResult(base64ToObjectUrl(result.data))
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "An unexpected error occurred"
+      // Get a hidden temp path for the Go engine to dump the unlocked file into
+      tempOutputPath = await invoke<string>("get_temp_path");
+
+      // 2. Command the Go Engine FIRST!
+      const command = {
+        op: "unlock",
+        inputPath: inputPath,
+        outputPath: tempOutputPath, // Save to temp first
+        password: store.password,
+      };
+
+      const responseStr = await invoke<string>("run_pdf_engine", {
+        commandJson: JSON.stringify(command),
+      });
+      const response = JSON.parse(responseStr);
+
+      if (!response.success) {
+        throw new Error(response.error ?? "Failed to unlock PDF");
+      }
+
+      // 3. IF WE REACH HERE, THE PASSWORD WAS CORRECT! 🎉
+      // Now we ask the user where they want to save their shiny new file.
+      const savePath = await save({
+        title: "Save Unlocked PDF",
+        defaultPath: `unlocked_${store.uploadedFile.name}`,
+        filters: [{ name: "PDF Document", extensions: ["pdf"] }],
+      });
+
+      if (!savePath) {
+        // User cancelled the save dialog, but we still need to delete the unlocked temp file
+        await invoke("delete_temp_file", { path: tempOutputPath }).catch(
+          () => {},
+        );
+
+        // FIX: Change "unlock" to "idle" to match your TypeScript definitions
+        store.setStep("idle");
+        return;
+      }
+
+      // 4. Instantly move the successfully unlocked file to their chosen path!
+      await invoke("move_file", { oldPath: tempOutputPath, newPath: savePath });
+
+      // 5. Success State Updates
+      const fileName = savePath.split(/[/\\]/).pop() || store.uploadedFile.name;
+      setDownloadName(fileName);
+      
+    } catch (err: any) {
+      const msg = err instanceof Error ? err.message : String(err);
       const isWrongPassword =
         msg.toLowerCase().includes("wrong") ||
         msg.toLowerCase().includes("incorrect") ||
         msg.toLowerCase().includes("password") ||
-        msg.toLowerCase().includes("decrypt")
-      
-      store.setError(isWrongPassword ? "Incorrect password. Please try again." : `Error: ${msg}`)
+        msg.toLowerCase().includes("decrypt") ||
+        msg.toLowerCase().includes("failed");
+
+      store.setError(
+        isWrongPassword
+          ? "Incorrect password. Please try again."
+          : `Error: ${msg}`,
+      );
+      store.setStep("error"); // This leaves them on the password screen so they can try again!
+    } finally {
+      // 6. Always clean up the input file so we don't leak memory
+      if (inputPath) {
+        await invoke("delete_temp_file", { path: inputPath }).catch(() => {});
+      }
     }
   }
 
   React.useEffect(() => {
-    return () => { if (store.downloadUrl) URL.revokeObjectURL(store.downloadUrl) }
-  }, [store.downloadUrl])
+    return () => {
+      if (store.downloadUrl && store.downloadUrl !== "#") {
+        URL.revokeObjectURL(store.downloadUrl);
+      }
+    };
+  }, [store.downloadUrl]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
-  const isChecking    = store.step === "checking"
-  const isLoading     = store.step === "unlocking"
-  const isSuccess     = store.step === "success"
-  const isAlreadyOpen = store.step === "alreadyUnlocked"
-  const hasError      = store.step === "error"
-  const canUnlock     = !!store.uploadedFile?.isEncrypted && store.password.trim().length > 0 && !isLoading
+  const isChecking = store.step === "checking";
+  const isLoading = store.step === "unlocking";
+  const isSuccess = store.step === "success";
+  const isAlreadyOpen = store.step === "alreadyUnlocked";
+  const hasError = store.step === "error";
+  const canUnlock =
+    !!store.uploadedFile?.isEncrypted &&
+    store.password.trim().length > 0 &&
+    !isLoading;
 
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <TooltipProvider delay={300}>
       <div className="flex h-full flex-col overflow-y-auto">
-
         {/* ─── Header ──────────────────────────────────────────────── */}
         <div className="relative flex shrink-0 items-center justify-between border-b border-border/60 dark:border-white/[0.06] px-8 py-5">
-          {/* Subtle top gradient */}
           <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#10b981]/30 to-transparent" />
 
           <div className="flex items-center gap-3.5">
-            {/* Icon badge */}
             <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-[#10b981]/15 ring-1 ring-[#10b981]/25 shadow-[0_0_20px_rgba(16,185,129,0.15)]">
               <LockOpen className="h-4 w-4 text-[#34d399]" />
               <div className="absolute inset-0 rounded-xl bg-[#10b981]/10 blur-sm" />
             </div>
             <div>
-              <h1 className="text-[15px] font-bold text-foreground tracking-tight">Unlock PDF</h1>
+              <h1 className="text-[15px] font-bold text-foreground tracking-tight">
+                Unlock PDF
+              </h1>
               <p className="text-[11px] text-muted-foreground/60 mt-0.5">
                 Remove password protection · Local engine
               </p>
@@ -146,7 +211,6 @@ export default function UnlockPdfPage() {
 
           {/* Trust + info */}
           <div className="flex items-center gap-3">
-            {/* Trust chips */}
             <div className="hidden sm:flex items-center gap-2">
               {TRUST_ITEMS.map(({ icon: Icon, text }) => (
                 <div
@@ -154,19 +218,23 @@ export default function UnlockPdfPage() {
                   className="flex items-center gap-1.5 rounded-full border border-border/50 dark:border-white/[0.07] bg-muted/30 dark:bg-white/[0.03] px-3 py-1.5"
                 >
                   <Icon className="h-3 w-3 text-[#34d399]/70" />
-                  <span className="text-[10px] font-medium text-muted-foreground/60">{text}</span>
+                  <span className="text-[10px] font-medium text-muted-foreground/60">
+                    {text}
+                  </span>
                 </div>
               ))}
             </div>
 
             <Tooltip>
-              <TooltipTrigger
-                className="flex h-8 w-8 cursor-default items-center justify-center rounded-lg text-muted-foreground/40 transition-colors hover:bg-muted/50 dark:hover:bg-white/5 hover:text-muted-foreground"
-              >
+              <TooltipTrigger className="flex h-8 w-8 cursor-default items-center justify-center rounded-lg text-muted-foreground/40 transition-colors hover:bg-muted/50 dark:hover:bg-white/5 hover:text-muted-foreground">
                 <Info className="h-4 w-4" />
               </TooltipTrigger>
-              <TooltipContent side="left" className="max-w-[200px] text-center text-xs">
-                Powered by a <strong>local Go engine</strong>. Your file never leaves this device.
+              <TooltipContent
+                side="left"
+                className="max-w-[200px] text-center text-xs"
+              >
+                Powered by a <strong>local Rust engine</strong>. Your file never
+                leaves this device.
               </TooltipContent>
             </Tooltip>
           </div>
@@ -175,7 +243,6 @@ export default function UnlockPdfPage() {
         {/* ─── Body ────────────────────────────────────────────────── */}
         <div className="flex flex-1 items-start justify-center px-8 py-10">
           <div className="w-full max-w-[540px]">
-
             {/* ── Checking spinner ── */}
             {isChecking && (
               <div className="flex flex-col items-center gap-4 rounded-2xl border border-border/50 dark:border-white/[0.06] bg-muted/20 dark:bg-white/[0.02] py-16 text-center animate-in fade-in-0 zoom-in-95 duration-300">
@@ -184,8 +251,12 @@ export default function UnlockPdfPage() {
                   <div className="absolute inset-0 animate-ping rounded-full bg-[#10b981]/10 [animation-duration:1.5s]" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-foreground/80">Analysing PDF…</p>
-                  <p className="mt-1 text-xs text-muted-foreground/50">Detecting encryption status</p>
+                  <p className="text-sm font-semibold text-foreground/80">
+                    Analysing PDF…
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground/50">
+                    Detecting encryption status
+                  </p>
                 </div>
               </div>
             )}
@@ -195,16 +266,12 @@ export default function UnlockPdfPage() {
               <div className="space-y-4 animate-in fade-in-0 slide-in-from-bottom-3 duration-400">
                 <FileCard
                   uploadedFile={store.uploadedFile}
-                  onReplace={() => {
-                    store.reset()
-                  }}
+                  onReplace={() => store.reset()}
                 />
                 <AlreadyUnlockedCard
                   fileName={store.uploadedFile.name}
                   downloadUrl={store.downloadUrl}
-                  onReset={() => {
-                    store.reset()
-                  }}
+                  onReset={() => store.reset()}
                 />
               </div>
             )}
@@ -212,25 +279,21 @@ export default function UnlockPdfPage() {
             {/* ── Success ── */}
             {isSuccess && store.downloadUrl && (
               <SuccessCard
-                fileName={downloadName || (store.uploadedFile?.name ?? "unlocked.pdf")}
+                fileName={
+                  downloadName || (store.uploadedFile?.name ?? "unlocked.pdf")
+                }
                 downloadUrl={store.downloadUrl}
-                onReset={() => {
-                  store.reset()
-                }}
+                onReset={() => store.reset()}
               />
             )}
 
             {/* ── Main flow (idle / error / unlocking) ── */}
             {!isChecking && !isAlreadyOpen && !isSuccess && (
               <div className="space-y-6 animate-in fade-in-0 duration-300">
-
-                {/* Card shell */}
                 <div className="relative overflow-hidden rounded-2xl border border-border dark:border-white/[0.07] bg-card dark:bg-white/[0.02]">
-                  {/* Top accent line */}
                   <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#10b981]/40 to-transparent" />
 
                   <div className="space-y-0 divide-y divide-border/50 dark:divide-white/[0.05]">
-
                     {/* ─ Step 1: Upload ─ */}
                     <div className="p-6">
                       <StepLabel
@@ -272,9 +335,11 @@ export default function UnlockPdfPage() {
                           <div className="mt-4">
                             <PasswordInput
                               value={store.password}
-                              onChange={val => store.setPassword(val)}
+                              onChange={(val) => store.setPassword(val)}
                               showPassword={store.showPassword}
-                              onToggleShow={() => store.setShowPassword(!store.showPassword)}
+                              onToggleShow={() =>
+                                store.setShowPassword(!store.showPassword)
+                              }
                               hasError={hasError}
                               errorMessage={store.errorMessage}
                               disabled={isLoading}
@@ -303,7 +368,7 @@ export default function UnlockPdfPage() {
                                 "focus-visible:ring-2 focus-visible:ring-[#10b981]/60",
                                 canUnlock
                                   ? "bg-[#10b981] hover:bg-[#059669] hover:shadow-[0_0_30px_rgba(16,185,129,0.45)] active:scale-[0.99]"
-                                  : "cursor-not-allowed bg-muted/60 dark:bg-white/[0.06] text-foreground/25"
+                                  : "cursor-not-allowed bg-muted/60 dark:bg-white/[0.06] text-foreground/25",
                               )}
                             >
                               {canUnlock && (
@@ -319,7 +384,9 @@ export default function UnlockPdfPage() {
                                   <>
                                     <Lock className="h-4 w-4" />
                                     Unlock PDF
-                                    {canUnlock && <ArrowRight className="h-4 w-4 opacity-70 transition-transform duration-200 group-hover:translate-x-0.5" />}
+                                    {canUnlock && (
+                                      <ArrowRight className="h-4 w-4 opacity-70 transition-transform duration-200 group-hover:translate-x-0.5" />
+                                    )}
                                   </>
                                 )}
                               </span>
@@ -331,7 +398,6 @@ export default function UnlockPdfPage() {
                   </div>
                 </div>
 
-                {/* Bottom trust bar */}
                 <div className="flex items-center justify-center gap-4">
                   <div className="h-px flex-1 bg-border/40 dark:bg-white/[0.05]" />
                   <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/40">
@@ -342,43 +408,51 @@ export default function UnlockPdfPage() {
                 </div>
               </div>
             )}
-
           </div>
         </div>
       </div>
     </TooltipProvider>
-  )
+  );
 }
 
 // ─── Step Label ───────────────────────────────────────────────────────────────
 
 interface StepLabelProps {
-  n: number
-  text: string
-  hint?: string
-  active?: boolean
-  done?: boolean
+  n: number;
+  text: string;
+  hint?: string;
+  active?: boolean;
+  done?: boolean;
 }
 
-function StepLabel({ n, text, hint, active = false, done = false }: StepLabelProps) {
+function StepLabel({
+  n,
+  text,
+  hint,
+  active = false,
+  done = false,
+}: StepLabelProps) {
   return (
     <div className="flex items-start gap-3">
-      {/* Number badge */}
-      <div className={cn(
-        "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-all duration-300",
-        done
-          ? "bg-[#10b981]/30 text-[#34d399] ring-1 ring-[#10b981]/40"
-          : active
-            ? "bg-[#10b981]/20 text-[#34d399] ring-1 ring-[#10b981]/30"
-            : "bg-muted/50 dark:bg-white/5 text-muted-foreground/40 ring-1 ring-border dark:ring-white/10"
-      )}>
+      <div
+        className={cn(
+          "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-all duration-300",
+          done
+            ? "bg-[#10b981]/30 text-[#34d399] ring-1 ring-[#10b981]/40"
+            : active
+              ? "bg-[#10b981]/20 text-[#34d399] ring-1 ring-[#10b981]/30"
+              : "bg-muted/50 dark:bg-white/5 text-muted-foreground/40 ring-1 ring-border dark:ring-white/10",
+        )}
+      >
         {done ? "✓" : n}
       </div>
       <div>
-        <p className={cn(
-          "text-[13px] font-semibold transition-colors duration-200",
-          active || done ? "text-foreground/90" : "text-muted-foreground/50"
-        )}>
+        <p
+          className={cn(
+            "text-[13px] font-semibold transition-colors duration-200",
+            active || done ? "text-foreground/90" : "text-muted-foreground/50",
+          )}
+        >
           {text}
         </p>
         {hint && (
@@ -386,5 +460,5 @@ function StepLabel({ n, text, hint, active = false, done = false }: StepLabelPro
         )}
       </div>
     </div>
-  )
+  );
 }

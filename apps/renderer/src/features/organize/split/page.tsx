@@ -31,8 +31,8 @@ export function SplitPage() {
     if (mergeOutput) {
       // Asking for a single file save location
       const result = await save({
-        title: 'Save Split PDF',
-        defaultPath: `split_${file.name}`,
+        title: 'Save Trimmed PDF',
+        defaultPath: `trimmed_${file.name}`,
         filters: [{ name: 'PDF Document', extensions: ['pdf'] }]
       })
       if (!result) return // User cancelled
@@ -52,37 +52,46 @@ export function SplitPage() {
     setError(null)
     
     try {
+      // Write input file to temp so Rust can read it
       const buffer = await file.arrayBuffer()
       const bytes = Array.from(new Uint8Array(buffer))
+      const inputPath = await invoke<string>('write_temp_file', { bytes })
       
-      let pageRanges: string[] = []
+      // 2. Map ranges/selected to a flat array of page numbers
+      let pagesToProcess: number[] = []
+      
       if (mode === "range") {
-        pageRanges = ranges.map(r => r.from === r.to ? `${r.from}` : `${r.from}-${r.to}`)
+        ranges.forEach(r => {
+          // Convert {from: 1, to: 3} into [1, 2, 3]
+          for (let i = r.from; i <= r.to; i++) {
+            if (!pagesToProcess.includes(i)) {
+              pagesToProcess.push(i)
+            }
+          }
+        })
       } else if (mode === "pages") {
-        pageRanges = selectedPages.map(p => `${p}`)
+        pagesToProcess = [...selectedPages]
       } else {
         throw new Error("Size mode is not yet implemented.")
       }
       
-      // Write input file to temp
-      const inputPath = await invoke<string>('write_temp_file', { bytes })
-
-      // 2. Command Go Engine to write DIRECTLY to the user's chosen path/folder!
-      const command = {
-        op: "split",
-        inputPath: inputPath,
-        outputPath: savePath, // <--- Direct Save!
-        pageRanges: pageRanges,
-        mergeOutput: mergeOutput
+      if (pagesToProcess.length === 0) {
+         throw new Error("No pages selected to extract/trim.")
       }
 
-      const responseStr = await invoke<string>('run_pdf_engine', { 
-        commandJson: JSON.stringify(command) 
-      })
-      const response = JSON.parse(responseStr)
-
-      if (!response.success) {
-        throw new Error(response.error ?? "Split failed")
+      // 3. Command Native Rust Engine!
+      if (mergeOutput) {
+        await invoke('trim_pdf', {
+          inputPath: inputPath,
+          outputPath: savePath,
+          selectedPages: pagesToProcess
+        })
+      } else {
+        await invoke('extract_pages_pdf', {
+          inputPath: inputPath,
+          outDir: savePath,
+          selectedPages: pagesToProcess
+        })
       }
       
       // Cleanup input temp file
@@ -91,7 +100,7 @@ export function SplitPage() {
       // Show success (Files are already magically on their hard drive!)
       setStep("success")
     } catch (err: any) {
-      setError(err.message || "Failed to split PDF")
+      setError(err.message || "Failed to process PDF")
       setStep("split")
     }
   }
@@ -109,12 +118,12 @@ export function SplitPage() {
     return (
       <div className="flex h-full w-full items-center justify-center p-6">
         <SuccessCard
-          fileName="Split_Documents.pdf"
+          fileName={mergeOutput ? "Trimmed_Document.pdf" : "Extracted_Pages"}
           downloadUrl="#"
           onReset={reset}
-          title="Split Successfully"
-          description="Your PDF file has been successfully split."
-          primaryActionText="Save Split PDF"
+          title="Operation Successful"
+          description={mergeOutput ? "Your PDF has been trimmed successfully." : "Your pages have been extracted successfully."}
+          primaryActionText="Open Folder" // You might want to update this behavior later to open the output folder!
           secondaryActionText="Split More"
         />
       </div>

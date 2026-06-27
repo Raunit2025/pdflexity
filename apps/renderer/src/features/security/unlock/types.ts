@@ -1,6 +1,4 @@
-// ─── Unlock PDF — Type Definitions ───────────────────────────────────────────
-// Mirror of packages/shared/src/(pdfsecurity)/unlockpdf/types.ts
-// These stay here for renderer-side type safety (no cross-package TS resolution needed)
+
 
 export type UnlockStep = "idle" | "checking" | "unlocking" | "success" | "error" | "alreadyUnlocked"
 

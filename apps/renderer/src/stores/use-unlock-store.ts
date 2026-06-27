@@ -23,7 +23,10 @@ export const useUnlockStore = create<UnlockStore>((set) => ({
   setUploadedFile: (uploadedFile) => set({ uploadedFile, step: "idle", errorMessage: null }),
   setPassword: (password) => set({ password, errorMessage: null, step: "idle" }),
   setShowPassword: (showPassword) => set({ showPassword }),
-  setStep: (step) => set({ step, errorMessage: null, downloadUrl: null, uploadedFile: null }),
+  
+  // FIX: Only update the step and clear the error message. 
+  // We NEVER wipe out the uploadedFile or downloadUrl here!
+  setStep: (step) => set({ step, errorMessage: null }),
   
   setAlreadyUnlocked: (uploadedFile, downloadUrl) => set({
     step: "alreadyUnlocked",
@@ -41,7 +44,10 @@ export const useUnlockStore = create<UnlockStore>((set) => ({
   setError: (errorMessage) => set({ errorMessage, step: "error" }),
 
   reset: () => set((state) => {
-    if (state.downloadUrl) URL.revokeObjectURL(state.downloadUrl)
+    // FIX: Make sure we don't try to revoke our dummy "#" URL
+    if (state.downloadUrl && state.downloadUrl !== "#") {
+      URL.revokeObjectURL(state.downloadUrl)
+    }
     return {
       uploadedFile: null,
       password: "",
