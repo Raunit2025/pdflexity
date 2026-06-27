@@ -15,7 +15,7 @@ import { useCompareStore } from "@/stores/use-compare-store"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function generateTextReport(store: ReturnType<typeof useCompareStore>): string {
+function generateTextReport(store: CompareState): string {
   const lines: string[] = []
   lines.push("PDF Comparison Report")
   lines.push("=".repeat(40))

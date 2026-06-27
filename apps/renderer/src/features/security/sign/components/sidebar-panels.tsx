@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useSignStore } from "@/stores/use-sign-store"
 import { Shield, Key, FileSignature, CheckCircle2, XCircle, FileText, Upload, Plus } from "lucide-react"
+import { invoke } from "@tauri-apps/api/core";
 
 export function DocumentPanel() {
   const store = useSignStore()
@@ -74,18 +75,22 @@ export function CertificatePanel() {
     if (!store.certPath || !store.passphrase) return
     setLoading(true)
     setError(null)
-    try {
-       const resp = await window.electronAPI.pdf.certInfo(store.certPath, store.passphrase)
-       if (resp.success) {
-           store.setCert(store.certPath, resp.data, store.passphrase)
-       } else {
-           setError(resp.error)
-       }
-    } catch (e: any) {
-       setError(e.message)
-    } finally {
+    // NEW TAURI RUST CALL
+      try {
+        // Tauri automatically throws an exception if the Rust function returns Err()
+        // so we don't need to manually check response.success anymore!
+        const data = await invoke("get_cert_info", { 
+          certPath: store.certPath, 
+          passphrase: store.passphrase 
+        });
+        
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        store.setCert(store.certPath, data as any, store.passphrase);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
        setLoading(false)
-    }
+      }
   }
 
   return (
